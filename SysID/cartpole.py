@@ -14,7 +14,6 @@ class cartpole():
         self.viewer = None
         return
 
-
     def dynamics_PDP(self,state,action,params):
         """
         state: x,q,dx,dq
@@ -102,7 +101,7 @@ class cartpole():
             s.loss = s.predicted_states - next_states
             return jnp.mean(jnp.square(s.loss))  # mse
 
-    def loss_fn_traj(params,states,actions,next_states):
+    def loss_fn_traj(self,params,states,actions,next_states):
         """
         the trajctories is generated from initial state[0] and action[0:n]
         """
@@ -184,7 +183,8 @@ load_data = sio.loadmat('/home/qinjielin/RL_Ws/Pontryagin-Differentiable-Program
 data = load_data['cartpole_iodata'][0, 0]
 actions_data = data[0]
 states_data = data[1]
-true_params = data[2]
+true_params = data[2][0]
+sigma =2 
 
 #initialize the environment
 env = cartpole()
@@ -192,12 +192,12 @@ grad_loss = jax.jacfwd(env.loss_fn,argnums=0)
 grad_loss_traj = jax.jacfwd(env.loss_fn_traj,argnums=0)
 
 #initialize the parameter
-params = jnp.array([2.0,2.0,2.0])#cart mass, pole mas, pole length
+params = jnp.array(true_params+ sigma * np.random.rand(len(true_params)) - sigma / 2)#cart mass, pole mas, pole length
 loss_list = []
 batch_size = 5
 test_s,test_a,test_sdot = jnp.array(states_data[2][0:-1]),jnp.reshape(jnp.array(actions_data[2]),(20,)),jnp.array(states_data[2][1:])
 
-for i in range(10000):
+for i in range(1000):
     traj_index = i%3#data only has 3 trajectories
     states = jnp.array(states_data[traj_index][0:-1])
     actions =  jnp.reshape(jnp.array(actions_data[traj_index]),(states.shape[0],))
@@ -207,7 +207,10 @@ for i in range(10000):
     loss = env.loss_fn(params,test_s,test_a,test_sdot)
     params -= 0.01 * grad
     loss_list.append(loss)
-print("final loss:",loss_list)
+
+    if(i%100==0):
+        print("step:",i,"loss:",loss,"params:",params)
+# print("final loss:",loss_list)
 print("final params:",params)
 
 import matplotlib.pyplot as plt
