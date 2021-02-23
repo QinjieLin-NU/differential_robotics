@@ -245,24 +245,33 @@ if __name__ == "__main__":
     batch_size = 5
     test_s,test_a,test_sdot = jnp.array(states_data[0][0:-1]),jnp.reshape(jnp.array(actions_data[0]),(20,)),jnp.array(states_data[0][1:])
 
-    for i in range(10000):
-        traj_index = i%3#data only has 3 trajectories
-        states = jnp.array(states_data[traj_index][0:-1])
-        actions =  jnp.reshape(jnp.array(actions_data[traj_index]),(states.shape[0],))
-        next_states = jnp.array(states_data[traj_index][1:])
+    # for i in range(10000):
+    #     traj_index = i%3#data only has 3 trajectories
+    #     states = jnp.array(states_data[traj_index][0:-1])
+    #     actions =  jnp.reshape(jnp.array(actions_data[traj_index]),(states.shape[0],))
+    #     next_states = jnp.array(states_data[traj_index][1:])
         
-        grad = grad_loss(params,states,actions,next_states)
-        loss = env.loss_fn(params,test_s,test_a,test_sdot)
-        params -= 0.01 * grad
-        loss_list.append(loss)
-        params_list.append(params)
+    #     grad = grad_loss(params,states,actions,next_states)
+    #     loss = env.loss_fn(params,test_s,test_a,test_sdot)
+    #     params -= 0.01 * grad
+    #     loss_list.append(loss)
+    #     params_list.append(params)
 
-        if(i%100==0):
-            print("step:",i,"loss:",loss,"params:",params)
+    #     if(i%100==0):
+    #         print("step:",i,"loss:",loss,"params:",params)
 
-    for p in params_list[0::1000]:
+    params_list = [ [1.4034629,  1.295249,   0.59333175],
+    [1.3975228,  1.2837119, 0.76814085],
+    [1.3741106, 1.27681,   0.8425436],
+    [1.2707177,  1.2467496,  0.92553055],
+    [1.2260766, 1.2267696, 0.9381445],
+    [1.0870844, 1.1178433, 0.9686284],
+    [1.073072, 1.1016167, 0.9724776] ]
+
+
+    for p in params_list[0::1]:
         render_actions(env,p,test_s[0],test_a,test_sdot)
         # render_state(env,true_params,test_s)
 
-    # plt.plot(loss_list)
-    # plt.show()
+    plt.plot(loss_list)
+    plt.show()
