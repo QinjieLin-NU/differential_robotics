@@ -8,7 +8,9 @@ from jax import random
 from jax import grad, jit, vmap, ops,lax
 
 from jax.experimental import loops
-
+import scipy.io as sio
+import matplotlib.pyplot as plt
+import time
 class cartpole():
     def __init__(self):
         self.viewer = None
@@ -116,27 +118,29 @@ class cartpole():
             s.loss = s.predicted_states - next_states
             return jnp.mean(jnp.square(s.loss))  # mse
 
-    def render(self,params,state):
+    def render(self,params,state,num=1,other_state=None):
         masscart,masspole,length = params
         total_mass = masspole + masscart
         polemass_length = masspole * length
+        polemass_length = 1.0 # we make it fixed here
 
-        x, x_dot, theta, theta_dot = state
+        x, theta,x_dot, theta_dot = state
 
-        screen_width = 600
-        screen_height = 400
+        screen_width = 800#600
+        screen_height = 600#400
 
         world_width = 2.4 * 2
         scale = screen_width / world_width
         carty = 100  # TOP OF CART
         polewidth = 10.0
-        polelen = scale * (2 * polemass_length)
+        polelen = scale * (1 * polemass_length)# 2 *
         cartwidth = 50.0
         cartheight = 30.0
 
         if self.viewer is None:
             from gym.envs.classic_control import rendering
 
+            #add cart
             self.viewer = rendering.Viewer(screen_width, screen_height)
             l, r, t, b = -cartwidth / 2, cartwidth / 2, cartheight / 2, -cartheight / 2
             axleoffset = cartheight / 4.0
@@ -144,6 +148,8 @@ class cartpole():
             self.carttrans = rendering.Transform()
             cart.add_attr(self.carttrans)
             self.viewer.add_geom(cart)
+
+            #add pole
             l, r, t, b = -polewidth / 2, polewidth / 2, polelen - polewidth / 2, -polewidth / 2
             pole = rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
             pole.set_color(0.8, 0.6, 0.4)
@@ -151,11 +157,30 @@ class cartpole():
             pole.add_attr(self.poletrans)
             pole.add_attr(self.carttrans)
             self.viewer.add_geom(pole)
+
+            #add second pole
+            self.poletrans2 = None
+            if(num > 1):
+                # cart2 = rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
+                # self.carttrans2 = rendering.Transform()
+                # cart2.add_attr(self.carttrans2)
+                # self.viewer.add_geom(cart2)
+
+                pole2= rendering.FilledPolygon([(l, b), (l, t), (r, t), (r, b)])
+                pole2.set_color(0.4, 0.99, 0.99)
+                self.poletrans2 = rendering.Transform(translation=(0, axleoffset))
+                pole2.add_attr(self.poletrans2)
+                pole2.add_attr(self.carttrans)
+                self.viewer.add_geom(pole2)
+
+
             self.axle = rendering.make_circle(polewidth / 2)
             self.axle.add_attr(self.poletrans)
             self.axle.add_attr(self.carttrans)
             self.axle.set_color(0.5, 0.5, 0.8)
             self.viewer.add_geom(self.axle)
+
+            #add track
             self.track = rendering.Line((0, carty), (screen_width, carty))
             self.track.set_color(0, 0, 0)
             self.viewer.add_geom(self.track)
@@ -170,49 +195,74 @@ class cartpole():
         l, r, t, b = -polewidth / 2, polewidth / 2, polelen - polewidth / 2, -polewidth / 2
         pole.v = [(l, b), (l, t), (r, t), (r, b)]
 
-        x = state
-        cartx = x[0] * scale + screen_width / 2.0  # MIDDLE OF CART
+        # x = state
+        cartx = x * scale + screen_width / 2.0  # MIDDLE OF CART
         self.carttrans.set_translation(cartx, carty)
-        self.poletrans.set_rotation(-x[2])
+        self.poletrans.set_rotation(-theta)
+        if(num>1):
+            true_x, true_theta, _, _ = other_state
+            true_cartx = true_x * scale + screen_width / 2.0  # MIDDLE OF CART
+            self.poletrans2.set_rotation(-true_theta)
+            # self.carttrans2.set_translation(true_cartx, carty)
 
         return self.viewer.render(return_rgb_array="human" == "rgb_array")
 
 
-import scipy.io as sio
-load_data = sio.loadmat('/home/qinjielin/RL_Ws/Pontryagin-Differentiable-Programming/Examples/SysID/cartpole/data/cartpole_iodata.mat')
-data = load_data['cartpole_iodata'][0, 0]
-actions_data = data[0]
-states_data = data[1]
-true_params = data[2][0]
-sigma =2 
+def render_actions(env,params,init_state,actions,true_states):
+    current_state = jnp.array(init_state)
+    env.render(params,current_state,num=2,other_state=current_state)
+    for i in range(len(actions)):
+        action = actions[i]
+        next_state = env.dynamics_PDP(current_state,action,params)
+        current_state = next_state
+        true_state = true_states[i]
+        env.render(params,current_state,num=2,other_state = true_state)
+        time.sleep(0.1)
 
-#initialize the environment
-env = cartpole()
-grad_loss = jax.jacfwd(env.loss_fn,argnums=0)
-grad_loss_traj = jax.jacfwd(env.loss_fn_traj,argnums=0)
+def render_state(env,params,states):
+    for state in states:
+        current_state = jnp.array(state)
+        env.render(params,current_state)
+        time.sleep(0.1)
 
-#initialize the parameter
-params = jnp.array(true_params+ sigma * np.random.rand(len(true_params)) - sigma / 2)#cart mass, pole mas, pole length
-loss_list = []
-batch_size = 5
-test_s,test_a,test_sdot = jnp.array(states_data[2][0:-1]),jnp.reshape(jnp.array(actions_data[2]),(20,)),jnp.array(states_data[2][1:])
+if __name__ == "__main__":
+    load_data = sio.loadmat('/home/qinjielin/RL_Ws/Pontryagin-Differentiable-Programming/Examples/SysID/cartpole/data/cartpole_iodata.mat')
+    data = load_data['cartpole_iodata'][0, 0]
+    actions_data = data[0]
+    states_data = data[1]
+    true_params = data[2][0]
+    sigma =2 
 
-for i in range(1000):
-    traj_index = i%3#data only has 3 trajectories
-    states = jnp.array(states_data[traj_index][0:-1])
-    actions =  jnp.reshape(jnp.array(actions_data[traj_index]),(states.shape[0],))
-    next_states = jnp.array(states_data[traj_index][1:])
-    
-    grad = grad_loss(params,states,actions,next_states)
-    loss = env.loss_fn(params,test_s,test_a,test_sdot)
-    params -= 0.01 * grad
-    loss_list.append(loss)
+    #initialize the environment
+    env = cartpole()
+    grad_loss = jax.jacfwd(env.loss_fn,argnums=0)
+    grad_loss_traj = jax.jacfwd(env.loss_fn_traj,argnums=0)
 
-    if(i%100==0):
-        print("step:",i,"loss:",loss,"params:",params)
-# print("final loss:",loss_list)
-print("final params:",params)
+    #initialize the parameter
+    params = jnp.array(true_params+ sigma * np.random.rand(len(true_params)) - sigma / 2)#cart mass, pole mas, pole length
+    loss_list = []
+    params_list = []
+    batch_size = 5
+    test_s,test_a,test_sdot = jnp.array(states_data[0][0:-1]),jnp.reshape(jnp.array(actions_data[0]),(20,)),jnp.array(states_data[0][1:])
 
-import matplotlib.pyplot as plt
-plt.plot(loss_list)
-plt.show()
+    for i in range(10000):
+        traj_index = i%3#data only has 3 trajectories
+        states = jnp.array(states_data[traj_index][0:-1])
+        actions =  jnp.reshape(jnp.array(actions_data[traj_index]),(states.shape[0],))
+        next_states = jnp.array(states_data[traj_index][1:])
+        
+        grad = grad_loss(params,states,actions,next_states)
+        loss = env.loss_fn(params,test_s,test_a,test_sdot)
+        params -= 0.01 * grad
+        loss_list.append(loss)
+        params_list.append(params)
+
+        if(i%100==0):
+            print("step:",i,"loss:",loss,"params:",params)
+
+    for p in params_list[0::1000]:
+        render_actions(env,p,test_s[0],test_a,test_sdot)
+        # render_state(env,true_params,test_s)
+
+    # plt.plot(loss_list)
+    # plt.show()
